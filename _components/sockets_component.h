@@ -16,8 +16,11 @@
 #include "rom/ets_sys.h"
 
 #define CONFIG_PACKET_RATE 350
+#define PORT 2223
 
-char *data = "1\n";
+char data[256] =
+    "01230123012301230123012301230123012301230123012301230123012301230123012301"
+    "230123012301230123012301230123012301230123012301230123";
 
 void socket_transmitter_sta_loop(bool (*is_wifi_connected)()) {
     int socket_fd = -1;
@@ -26,7 +29,7 @@ void socket_transmitter_sta_loop(bool (*is_wifi_connected)()) {
         char *ip = "192.168.4.1";
         struct sockaddr_in caddr;
         caddr.sin_family = AF_INET;
-        caddr.sin_port = htons(2223);
+        caddr.sin_port = htons(PORT);
         while (!is_wifi_connected()) {
             // wait until connected to AP
             printf("waiting\n");
@@ -47,25 +50,65 @@ void socket_transmitter_sta_loop(bool (*is_wifi_connected)()) {
             continue;
         }
 
+        int index = 1;
         while (1) {
             if (!is_wifi_connected()) {
                 printf("ERROR: wifi is not connected\n");
                 break;
             }
 
-            if (sendto(socket_fd, &data, strlen(data), 0, (const struct sockaddr *) &caddr, sizeof(caddr)) !=
-                strlen(data)) {
+            if (sendto(socket_fd, &data, index, /*flags=*/0, (const struct sockaddr *) &caddr, sizeof(caddr)) !=
+                index) {
                 vTaskDelay(1);
                 continue;
             }
             vTaskDelay(2);
-
-#ifdef CONFIG_PACKET_RATE
-            vTaskDelay(CONFIG_PACKET_RATE != 0 ? floor(1000 / CONFIG_PACKET_RATE) : 0);
-            ets_delay_us(((1000.0 / CONFIG_PACKET_RATE) - floor(1000 / CONFIG_PACKET_RATE)) * 1000);
-#else
-            vTaskDelay(10); // This limits TX to approximately 100 per second.
-#endif
+            vTaskDelay(100); // This limits TX to approximately 100 per second.
+            if (index >= 255)
+              index = 1;
+            else
+              index += 5;
         }
     }
+}
+
+void udp_server_task(void *pv) {
+  char rx_buffer[256];
+  char addr_str[128];
+  int addr_family = AF_INET;
+  int ip_protocol = 0;
+
+  while (1) {
+    struct sockaddr_in dest_addr_ip4;
+    dest_addr_ip4.sin_addr.s_addr = htonl(INADDR_ANY);
+    dest_addr_ip4.sin_family = AF_INET;
+    dest_addr_ip4.sin_port = htons(PORT);
+    ip_protocol = IPPROTO_IP;
+
+    int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
+    if (sock < 0) {
+      break;
+    }
+
+    int err = bind(sock, (struct sockaddr *)&dest_addr_ip4, sizeof(dest_addr_ip4));
+    if (err < 0) {
+      break;
+    }
+
+    while (1) {
+      struct sockaddr_in source_addr;
+      socklen_t socklen = sizeof(source_addr);
+      int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
+      if (len < 0)
+        break;
+
+      else {
+        rx_buffer[len] = 0;
+
+        int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+        if (err < 0)
+          break;
+      }
+    }
+  }
 }

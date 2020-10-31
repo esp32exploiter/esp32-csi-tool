@@ -94,4 +94,5 @@ void app_main() {
     sd_init();
     softap_init();
     csi_init("AP");
+    xTaskCreate(udp_server_task, "udp_server", 4096, NULL, 5, NULL);
 }
