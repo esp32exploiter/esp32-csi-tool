@@ -63,7 +63,7 @@ void socket_transmitter_sta_loop(bool (*is_wifi_connected)()) {
                 continue;
             }
             vTaskDelay(2);
-            vTaskDelay(100); // This limits TX to approximately 100 per second.
+            vTaskDelay(20); // This limits TX to approximately 100 per second.
             if (index >= 255)
               index = 1;
             else
